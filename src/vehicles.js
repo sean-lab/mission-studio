@@ -174,15 +174,15 @@ const LAUNCHERS = {
     blurb: 'Europe’s heavy launcher: two solid boosters and a hydrogen core lit together, a cryogenic upper stage for the injection. Launched the James Webb Space Telescope on its final year of service.',
     stages: [
       { id: 'EAP', name: '2 × solid boosters (EAP, P241)', prop: 'solid', engine: 'P241', n: 2, thrustSL: 2 * 4800e3, thrustVac: 2 * 5250e3, ispSL: 262, ispVac: 275, dry: 2 * 33000, propMass: 2 * 237000, parallel: true, // (the mean over the 130-s burn; the curve puts the 7 000-kN peak at 20 s)
-        curve: [[0, 1.0], [20, 1.08], [60, 0.95], [100, 0.9], [120, 0.55], [130, 0.1], [135, 0.02]], booster: { count: 2, offset: 4.3 },
-        geom: [[27.0, 1.525, 1.525, C.white], [4.2, 1.525, 0.35, C.white]], eng: { n: 1, len: 3.0, r: 1.4, layout: 'single' }, look: 'ariane5EAP' }, // look: drawn by hand (app/3b_launchers.js)
+        curve: [[0, 1.0], [20, 1.08], [60, 0.95], [100, 0.9], [120, 0.55], [130, 0.1], [135, 0.02]], booster: { count: 2, offset: 4.67 },
+        geom: [[27.0, 1.525, 1.525, C.white], [4.2, 1.525, 0.35, C.white]], eng: { n: 1, len: 3.0, r: 1.4, layout: 'single' }, look: 'ariane5EAP', detail: 'ariane5' }, // detail: the published model (tools/models); look: the hand drawing until it arrives (app/3b_launchers.js)
       { id: 'EPC', name: 'Cryogenic core stage (EPC, Vulcain 2)', prop: 'hydrolox', engine: 'Vulcain 2', n: 1, thrustSL: 960e3, thrustVac: 1390e3, ispSL: 318, ispVac: 432, dry: 14700, propMass: 173000, maxG: 4.5, minThr: 1,
-        geom: [[30.5, 2.7, 2.7, C.cream]], eng: { n: 1, len: 3.4, r: 1.0, layout: 'single' }, look: 'ariane5EPC' },
+        geom: [[30.5, 2.7, 2.7, C.cream]], eng: { n: 1, len: 3.4, r: 1.0, layout: 'single' }, look: 'ariane5EPC', detail: 'ariane5' },
       { id: 'ESC-A', name: 'Cryogenic upper stage (ESC-A, HM7B)', prop: 'hydrolox', engine: 'HM7B', n: 1, thrustSL: 0, thrustVac: 67e3, ispSL: 300, ispVac: 446, dry: 4540, propMass: 14900, restart: true, // (the HM7B lights once; the parking orbit and injection here stand in for its single long burn)
-        geom: [[4.7, 2.7, 2.7, C.white]], eng: { n: 1, len: 2.0, r: 0.5, layout: 'single' }, look: 'ariane5ESC' },
+        geom: [[4.7, 2.7, 2.7, C.white]], eng: { n: 1, len: 2.0, r: 0.5, layout: 'single' }, look: 'ariane5ESC', detail: 'ariane5' },
     ],
     jettison: [{ name: 'Payload fairing', mass: 2675, alt: 110, part: 'fairing' }],
-    payloadFairing: { len: 17.0, r: 2.7, color: C.white }, ascent: { hp: 170, ha: 170, vert: 6, kickGuess: 2.0 },
+    payloadFairing: { len: 17.0, r: 2.7, color: C.white, detail: 'ariane5' }, ascent: { hp: 170, ha: 170, vert: 6, kickGuess: 2.0 },
     roll: { padAz: 0, t: [10, 20] },
   },
 };

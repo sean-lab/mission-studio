@@ -181,6 +181,40 @@ const RECIPES = {
     grime: { materials: ['Rocket_Material', 'Rocket_Details_Material'], amount: 0.1, tint: [0.95, 0.945, 0.93] },
     textures: { baseColor: 1024, other: 1024, named: { 'ET-foam': 2048 } },
   },
+  // Ariane 5: "Ariane 5 model" by bobymonsuta (https://sketchfab.com/3d-models/ariane-5-model-88a1de562245402da653bc1ae92b1b91),
+  // CC BY 4.0, unzipped into ariane5/. The whole vehicle on the pad, +Y up, the core on the axis, the boosters at x = ±0.9;
+  // scaled so the core is its published 5.4 m across (0.52 units), then stretched piece by piece to the stages' published
+  // lengths, since the model's core is short and its fairing long (warp, in metres after the scaling). Parts, each in its
+  // stage's frame as the app has it (y = 0 at the bottom of the stage's body, its engine below): `EPC` (the core, the
+  // Vulcain 2 3.4 m below), `ESC-A` (the upper stage's visible section, 4.7 m), `fairing` (17 m, y = 0 at its base),
+  // `EAP` (one booster on its own axis, y = 0 at the bottom of its body, the nozzle 3.0 m below; the left one of the file,
+  // the app sets the pair). The boosters' texture carries two agencies' emblems beside the member states' flags: those two
+  // panels are painted over (blank) — the app draws no organisation's logo.
+  ariane5: {
+    dl: 'ariane5/scene.gltf',
+    frame: (S => [S, 0, 0, 0, 0, S, 0, 0, 0, 0, S, 0, 0, 0, 0, 1])(2.7 / 0.52),
+    // (a booster: within 1.8 m of its axis and clear of the core's 2.7-m skin — the core's faces toward the boosters stay
+    // the core's)
+    triPart: ([x, y, z]) => { const nearB = Math.abs(x) > 2.75 && Math.hypot(Math.abs(x) - 0.9 * 2.7 / 0.52, z) < 1.8;
+      return nearB ? (x < 0 ? 'EAP' : null) : y > 30.89 ? 'fairing' : y > 27.78 ? 'ESC-A' : 'EPC'; },
+    warp: {
+      EPC: { y: [[1.61, -3.4], [3.79, 0], [27.78, 30.5]], r: [[0, 1], [100, 1]] },
+      'ESC-A': { y: [[27.78, 30.5], [30.89, 35.2]], r: [[0, 1], [100, 1]] },
+      fairing: { y: [[30.89, 35.2], [50.73, 52.2]], r: [[0, 1], [100, 1]] },
+      EAP: { y: [[0.05, -3.0], [1.71, 0], [25.7, 27.0], [30.74, 31.2]], r: [[0, 1], [100, 1]] },
+    },
+    origins: { EPC: 3.79, 'ESC-A': 27.78, fairing: 30.89, EAP: 1.71 },
+    fit: { EAP: { at: [-0.9 * 2.7 / 0.52, 0, 0], scale: [1, 1, 1] } }, // the booster onto its own axis
+    blank: [['Rocket_sec_text', [[2622, 1606, 2906, 1940], [2622, 2420, 2906, 2788]], [228, 228, 228]]],
+    materials: {
+      Rocket_main_text: { metal: 0.05, rough: 0.5, color: [0.9, 0.89, 0.86] }, Rocket_sec_text: { metal: 0.05, rough: 0.5 },
+      Pipes_white: { metal: 0.05, rough: 0.5 }, Tube_7_2__0: { metal: 0.2, rough: 0.5, color: [0.2, 0.2, 0.22] }, Sec_rockets_black: { metal: 0.2, rough: 0.5, color: [0.2, 0.2, 0.22] },
+      Nozzle_metal: { metal: 0.6, rough: 0.4 }, Thruster_main_metal: { metal: 0.5, rough: 0.4 }, Metal_1: { metal: 0.05, rough: 0.5, color: [0.88, 0.87, 0.84] }, // (mostly the fairing's inner shell, which shows at its edges: white like the skin) Metal_2: { metal: 0.6, rough: 0.35 },
+    },
+    strip: ['KHR_materials_clearcoat'],
+    simplify: 0.002,
+    textures: { baseColor: 2048, other: 1024 },
+  },
   // James Webb Space Telescope: "JWST (james webb space telescope)" by Paul
   // (https://sketchfab.com/3d-models/jwst-james-webb-space-telescope-6c92c08a672640afb58ee44d248fd0fe), CC BY 4.0,
   // unzipped into jwst/. The observatory fully deployed, in the file's own frame already as the app has it: +Y up the
@@ -438,6 +472,12 @@ async function buildScan(name, R, doc) {
     for (const ti of [m.getBaseColorTextureInfo(), m.getNormalTextureInfo(), m.getOcclusionTextureInfo(), m.getMetallicRoughnessTextureInfo(), m.getEmissiveTextureInfo()]) if (ti) ti.setTexCoord(0);
     m.setDoubleSided(true); // the cuts open the shell
   }
+  if (R.blank) for (const [texName, rects, fill] of R.blank) { // panels of a colour map painted over (organisations' emblems)
+    const t = root.listTextures().find(x => (x.getURI() || x.getName()).includes(texName)); if (!t) throw new Error('no texture ' + texName);
+    const { data, info } = await sharp(Buffer.from(t.getImage())).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    for (const [x0, y0, x1, y1] of rects) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const k = (y * info.width + x) * 3; data[k] = fill[0]; data[k + 1] = fill[1]; data[k + 2] = fill[2]; }
+    t.setImage(await sharp(data, { raw: { width: info.width, height: info.height, channels: 3 } }).png().toBuffer()).setMimeType('image/png');
+  }
   const sel = {}, A = [0, 0, 0], B = [0, 0, 0], C = [0, 0, 0];
   for (const n of root.listNodes()) {
     const mesh = n.getMesh(); if (!mesh) continue;
@@ -458,11 +498,13 @@ async function buildScan(name, R, doc) {
   }
   const groups = {};
   for (const [part, byPrim] of Object.entries(sel)) {
-    const pv = (R.pivots || {})[part] || [0, 0, 0], oy = R.origins && part in R.origins ? (R.warp ? pwl(R.warp.y, R.origins[part]) : R.origins[part]) : 0;
+    const Wo = R.warp && (R.warp.y ? R.warp : R.warp[part]);
+    const pv = (R.pivots || {})[part] || [0, 0, 0], oy = R.origins && part in R.origins ? (Wo ? pwl(Wo.y, R.origins[part]) : R.origins[part]) : 0;
     const byMat = new Map(); // one primitive per material
     for (const [p, t] of byPrim) { const m = p.getMaterial(); if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(subPrimitive(doc, p, t)); }
     const mesh = doc.createMesh(part);
-    for (const [m, prims] of byMat) { const j = joinPrimitives(prims); j.setMaterial(m); if (R.warp) warpPrimitive(j, R.warp); mesh.addPrimitive(j); }
+    const Wp = R.warp && (R.warp.y ? R.warp : R.warp[part]); // (one warp for the whole model, or one per part)
+    for (const [m, prims] of byMat) { const j = joinPrimitives(prims); j.setMaterial(m); if (Wp) warpPrimitive(j, Wp); mesh.addPrimitive(j); }
     const F = (R.fit || {})[part]; // a part scaled on its own: about F.at, by F.scale along each axis
     if (F) transformMesh(mesh, [F.scale[0], 0, 0, 0, 0, F.scale[1], 0, 0, 0, 0, F.scale[2], 0, -F.at[0] * F.scale[0], -F.at[1] * F.scale[1], -F.at[2] * F.scale[2], 1]);
     transformMesh(mesh, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -pv[0], -pv[1] - oy, -pv[2], 1]);

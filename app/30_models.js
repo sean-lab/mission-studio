@@ -154,7 +154,7 @@ function preloadDetailedModels(md) {
     if (L.orbiter) orbiterLivery(L.orbiter); // the flight's orbiter in its markings (the stack's and the orbiter's own configurations)
     if (o.model === 'iss') want.add('iss');
     if (o.model === 'jwst') want.add('jwst');
-    if (L.launcher && LAUNCHERS[L.launcher]) for (const st of LAUNCHERS[L.launcher].stages) if (st.detail) want.add(st.detail); // launch stacks and spent stages
+    if (L.launcher && LAUNCHERS[L.launcher]) { const LL = LAUNCHERS[L.launcher]; for (const st of LL.stages) if (st.detail) want.add(st.detail); if (LL.payloadFairing && LL.payloadFairing.detail) want.add(LL.payloadFairing.detail); } // launch stacks and spent stages
   }
   for (const n of want) detailFile(n);
 }
@@ -208,6 +208,8 @@ const STAGE_D = {
   'saturnv:S-IC': { caps: [[38.6, 5.0, 'metal']] }, // the forward bulkhead, under the top of the forward skirt
   'saturnv:S-II': { caps: [[5.52, 5.0, 'dark'], [24.87, 5.0, 'metal']], bells: true }, // the heat shield at the base of the aft skirt; the forward bulkhead inside the cone
   'saturnv:S-IVB': { caps: [[0.3, 3.25, 'dark'], [14.47, 3.25, 'metal']], bells: true }, // the thrust structure above the cone; the top of the instrument unit
+  'ariane5:EPC': { caps: [[30.45, 2.65, 'metal']] }, // the forward dome, seen once the upper stage has gone
+  'ariane5:ESC-A': { caps: [[0.05, 2.65, 'dark']], bells: true }, // its HM7B, hidden in the core's top until separation
 };
 // Space Shuttle: the external tank and the boosters of a CC BY model of the stack (paburoviii, credited in the README and the
 // app), scaled to their published sizes by tools/models; the orbiter is the Smithsonian's scan. STS-1 and STS-2 flew tanks
@@ -228,7 +230,7 @@ function stageD(st, fallback, opts) {
     if (opts.white) g.traverse(o => { if (o.isMesh && o.material && o.material.map && /Orange/.test(o.material.name)) o.material = etWhite(o.material); });
     if (P.IST && st.geom[0][4] && st.geom[0][4].ist && opts.ist !== false) g.add(P.IST.clone());
     for (const [y, r, kind] of D.caps || []) { const c = cyl(r, r, 0.06, kind === 'dark' ? mat('#2e3135', 'dark') : mat('#9a9fa5', 'metal'), 32); c.position.y = y - 0.03; g.add(c); }
-    if (D.bells) for (const p of engineLayout(st.eng)) { const b = bell(st.eng.len, st.eng.r); b.position.set(p[0], st.eng.y0, p[1]); g.add(b); }
+    if (D.bells) for (const p of engineLayout(st.eng)) { const b = bell(st.eng.len, st.eng.r); b.position.set(p[0], st.eng.y0 ?? -st.eng.len, p[1]); g.add(b); }
   } });
 }
 function lmAscentD() { return detailPart('apollo_lm', 'ascent', lmAscent(), { y: -0.195, extra: g => { const b = bell(0.75, 0.39); b.position.y = -0.85; g.add(b); } }); }
@@ -454,7 +456,7 @@ function buildLaunchStack(lkey, scModel, c) {
   const PF = L.payloadFairing;
   if (PF && c.fairing) {
     const yF = PF.encloseUpper && core.length >= 2 ? y - core[core.length - 1].s.geom.reduce((a, gg) => a + gg[0], 0) - 0.5 : y;
-    const f = ogive(PF.r, PF.len, mat(PF.color), PF.cyl ?? 0.45); f.position.y = yF; g.add(f); y = yF + PF.len;
+    const f0 = ogive(PF.r, PF.len, mat(PF.color), PF.cyl ?? 0.45), f = PF.detail ? detailPart(PF.detail, 'fairing', f0) : f0; f.position.y = yF; g.add(f); y = yF + PF.len;
   } else if (lkey !== 'starship') {
     const st = buildStowed(scModel, topR, { les: c.les, saj: c.saj }); st.position.y = y; g.add(st); y += st.userData.len;
   }
