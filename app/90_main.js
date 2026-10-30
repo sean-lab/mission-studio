@@ -67,7 +67,7 @@ function frame(now) {
   const realDt = STATE.filming ? STATE.filmDt : clamp((now - STATE.last) / 1000, 0, 0.1); STATE.last = now; MV.realDt = realDt;
   if (MV.md && STATE.playing) {
     if (STATE.auto) autoWarp(realDt);
-    const md = MV.md; const t1 = clamp(STATE.t + realDt * STATE.rate, md.tStart, md.tEnd);
+    const md = MV.md; const t1 = clamp(STATE.t + realDt * STATE.rate * (CAM.mode === 'cine' ? CINE.timeK : 1), md.tStart, md.tEnd); // (slow motion in the cinematic launch's shots)
     crossEvents(STATE.t, t1); STATE.t = t1;
     if (STATE.t >= md.tEnd) { STATE.playing = false; syncPlayUI(); }
   }
@@ -183,7 +183,7 @@ function initUI() {
   $('#selMode').addEventListener('change', e => setMode(e.target.value));
   $('#selLook').addEventListener('change', e => { CAM.look = e.target.value; });
   const ln = $('#selLens'); for (const mm of LENSES) ln.append(h('option', { value: mm }, mm + ' mm'));
-  ln.addEventListener('change', e => { CAM.lens = +e.target.value; if (CAM.mode === 'auto') DIR.lensUser = CAM.lens; applyLens(); });
+  ln.addEventListener('change', e => { CAM.lens = +e.target.value; if (directed()) DIR.lensUser = CAM.lens; applyLens(); });
   $('#selAspect').addEventListener('change', e => { CAM.aspect = +e.target.value; applyLens(); });
   $('#selFrame').addEventListener('change', e => { MV.frameSel = e.target.value; });
   $('#bLayers').addEventListener('click', e => { e.stopPropagation(); $('#layers').hidden = !$('#layers').hidden; });
@@ -236,7 +236,7 @@ function onKey(e) {
   else if (k === 'h' || k === 'H') $('#app').classList.toggle('hide-ui');
   else if (k === 'f' || k === 'F') setMode('auto');
   else if (k === '?') $('#help').hidden = false;
-  else if ('123456'.includes(k)) setMode(['auto', 'orbit', 'chase', 'lookat', 'ground', 'top'][+k - 1]);
+  else if ('1234567'.includes(k)) setMode(['auto', 'orbit', 'chase', 'lookat', 'ground', 'top', 'cine'][+k - 1]);
 }
 function onResize() {
   const cv = R.renderer.domElement; R.width = cv.clientWidth || window.innerWidth; R.height = cv.clientHeight || window.innerHeight;
@@ -253,5 +253,5 @@ function boot() {
   const last = lsGet('mstudio-last', 'apollo11'); selectScenario(scenarioById(last) ? last : 'apollo11');
   requestAnimationFrame(frame);
 }
-window.__ms = { STATE, CAM, DIR, MM, MV, R, DETAIL, setTime, setTarget, setMode, applyLens, SETUP, Planner, renderFrame, autoWarp, crossEvents, computeCraft, craftAttitude, cfgAt, activeMounts, modelForConfig, attEpisodes, groundFrame, helioReset: () => { R.helio = {}; }, capHitLocal, eclToMesh, roverPose, meshDir, SND, setSound, THREE };
+window.__ms = { STATE, CAM, DIR, CINE, MM, MV, R, DETAIL, setTime, setTarget, setMode, applyLens, SETUP, Planner, renderFrame, autoWarp, crossEvents, computeCraft, craftAttitude, cfgAt, activeMounts, modelForConfig, attEpisodes, groundFrame, helioReset: () => { R.helio = {}; }, capHitLocal, eclToMesh, roverPose, meshDir, SND, setSound, THREE };
 try { boot(); } catch (err) { document.body.insertAdjacentHTML('beforeend', `<pre style="position:fixed;left:16px;top:16px;right:16px;color:#ff6767;background:#000;padding:12px;z-index:99;white-space:pre-wrap">Startup error: ${esc(err && err.stack || err)}</pre>`); throw err; }

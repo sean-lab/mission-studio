@@ -42,6 +42,7 @@
   - The same colours are used on the 3D paths, the Solar System map and the timeline.
 - **Direct the camera.**
   - An auto-follow "director" mode, plus orbit, chase, look-at, ground and top-down cameras.
+  - A **cinematic launch** mode that cuts the launch like a film: a low camera by the pad at ignition, the liftoff in slow motion from out past the exhaust cloud, a long lens following the climb, a camera below the vehicle looking up its plume, and the first staging in slow motion.
   - Lenses from 12 to 3200 mm and film aspect-ratio guides (2.39:1, 1.85:1 …).
   - A film look (in Layers): light brighter than white blooms (the Sun, flames, the glow of an entry), highlights roll off instead of clipping, the corners darken a little and fine grain moves over the picture.
   - Drag to orbit and scroll or pinch to zoom.

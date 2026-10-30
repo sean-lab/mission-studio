@@ -12,6 +12,8 @@ function targetPos(id, t) {
   return null;
 }
 function targetRadius(id) { if (id && id.startsWith('body:')) { const b = R.bodies[id.slice(5)]; return b ? b.R : 1; } return 0; }
+// the director runs the camera: 'auto', or 'cine' (app/51_cine.js) which is the director with the launch cut as a film
+function directed() { return CAM.mode === 'auto' || CAM.mode === 'cine'; }
 function targetCraft() { return CAM.target.startsWith('obj:') ? craftById(CAM.target.slice(4)) : null; }
 function setTarget(id, opts = {}) {
   if (id === CAM.target && !opts.force) return;
@@ -25,14 +27,15 @@ function setTarget(id, opts = {}) {
   if (from) CAM.trans = { fromId: prevId, fromP: from, t0: clockMs(), dur: 1100, distFrom: CAM.dist, distTo: dist };
   CAM.dist = dist;
   if (CAM.mode === 'ground' && id.startsWith('body:')) setMode('orbit');
-  if (CAM.mode === 'auto' && !opts.keepMode) setMode(id.startsWith('body:') ? 'orbit' : 'chase');
+  if (directed() && !opts.keepMode) setMode(id.startsWith('body:') ? 'orbit' : 'chase');
   syncCamUI();
 }
 function setMode(m) {
-  const wasAuto = CAM.mode === 'auto';
+  const wasAuto = directed();
   CAM.mode = m; $('#lookWrap').hidden = m !== 'lookat';
-  if (m === 'auto') { DIR.key = ''; DIR.lastT = null; DIR.blend = null; }
-  if (wasAuto && m !== 'auto' && DIR.prm) { CAM.dist = DIR.prm.dist; CAM.az = DIR.prm.az; CAM.el = DIR.prm.el; }
+  if (m !== 'cine') CINE.timeK = 1;
+  if (m === 'auto' || m === 'cine') { DIR.key = ''; DIR.lastT = null; DIR.blend = null; }
+  if (wasAuto && !directed() && DIR.prm) { CAM.dist = DIR.prm.dist; CAM.az = DIR.prm.az; CAM.el = DIR.prm.el; }
   if (m === 'ground') { CAM.ground.track = true; if (CAM.lens < 85) CAM.lens = 200; }
   if (m === 'top') { CAM.el = 89 * DEG; }
   if (m === 'chase') { CAM.az = 200 * DEG; CAM.el = 12 * DEG; }
@@ -151,6 +154,16 @@ function poseFor(mode, prm, P, t) {
     if (prm.centreK > 0) { // turned toward the craft (the director's look-at shot dragged past its frame): between the body and the craft
       const Lc = vunit(vlerp(Ld, vunit(vscale(pos, -1)), prm.centreK)); return { pos, up: u3, look: vadd(pos, vscale(Lc, Math.max(dist, 1e-6))), center: false }; }
     return { pos, up: u3, look: vsub(PL, P), center: false };
+  }
+  if (mode === 'padcam') { // a camera on the ground near the launch pad (prm.spot: km east, north and up from the site), looking at the target
+    const S = MV.md && LAUNCH_SITES[MV.md.cfg.site];
+    if (S && prm.spot) {
+      const [dE, dN, h] = prm.spot, Rb = surfaceRadius('earth'), la = S.lat + dN / Rb * RAD, lo = S.lon + dE / (Rb * Math.cos(S.lat * DEG)) * RAD;
+      let alt = (dE * dE + dN * dN) / (2 * Rb); const th = terrainHeightAt(la, lo); if (th != null) alt = Math.max(alt, th); // (on the pad's flat ground, or the real ground where it is drawn)
+      const site = sitePosEcl('earth', la, lo, alt + h, t), pos = keepAboveGround(P, vsub(vadd(helio('earth', t).r, site), P), t);
+      return { pos, up: localFrame('earth', site, t).up, look: prm.aim || [0, 0, 0], center: false };
+    }
+    mode = 'chase';
   }
   if (mode === 'site') { // a camera on the ground by the launch site, looking up at the target
     const g = groundSite(t);
@@ -284,9 +297,11 @@ function directorUpdate(t, realDt) {
   const jump = DIR.lastT == null || Math.abs(t - DIR.lastT) > Math.max(120, (STATE.playing ? STATE.rate : 1) * 0.6);
   DIR.lastT = t;
   if (CAM.target !== 'obj:' + c.o.id) { if (jump) { CAM.target = 'obj:' + c.o.id; CAM.trans = null; syncCamUI(); } else setTarget('obj:' + c.o.id, { force: true, keepMode: true }); }
-  const shot = directorShot(c, t); if (!shot) return;
+  const shot = (CAM.mode === 'cine' && cineShot(c, t)) || directorShot(c, t); if (!shot) return;
+  let cut = false;
   if (shot.key !== DIR.key) {
-    if (!jump && DIR.key) DIR.blend = { pos: R.camera.position.clone(), quat: R.camera.quaternion.clone(), up: R.camera.up.clone(), center: DIR.prm ? DIR.prm.mode !== 'lookat' : true, t0: now, dur: shot.blend || 1800 };
+    cut = !!shot.cut; // (a cut: no blend from the last shot, the lens set at once)
+    if (!jump && DIR.key && !cut) DIR.blend = { pos: R.camera.position.clone(), quat: R.camera.quaternion.clone(), up: R.camera.up.clone(), center: DIR.prm ? DIR.prm.mode !== 'lookat' : true, t0: now, dur: shot.blend || 1800 };
     else DIR.blend = null;
     DIR.key = shot.key; DIR.since = now; DIR.offAz = 0; DIR.offEl = 0; DIR.zoomK = 1; DIR.lensUser = null; DIR.dist = null; DIR.aimH = null;
   }
@@ -295,7 +310,8 @@ function directorUpdate(t, realDt) {
   DIR.dist = DIR.dist == null || jump ? target : Math.exp(Math.log(DIR.dist) + (Math.log(target) - Math.log(DIR.dist)) * Math.min(1, realDt * 1.5));
   if (shot.aimH == null) DIR.aimH = null; // look above the base point (a standing rocket is framed around its middle)
   else DIR.aimH = DIR.aimH == null || jump ? shot.aimH : DIR.aimH + (shot.aimH - DIR.aimH) * Math.min(1, realDt * 1.5);
-  const aim = DIR.aimH != null && c.s ? vscale(vunit(c.rD || c.s.r), DIR.aimH) : null;
+  const aim = shot.aimV && c.vD && vnorm(c.vD) > 1e-6 ? vscale(vunit(c.vD), shot.aimV) // (up the vehicle's axis, near enough its velocity in flight: a cinematic shot of a long stack)
+    : DIR.aimH != null && c.s ? vscale(vunit(c.rD || c.s.r), DIR.aimH) : null;
   let az, el, centreK = 0;
   if (shot.mode === 'lookat') { // keep the craft inside the middle of the film frame, whatever the lens and screen shape
     const fr = frameRect(), tH = 18 / CAM.lens, tV = tH * fr.h / fr.w;
@@ -306,16 +322,16 @@ function directorUpdate(t, realDt) {
     const outA = Math.max(Math.abs(az) - aL, 0) / 0.25, outE = Math.max(Math.abs(el) - eL, 0) / 0.25;
     centreK = smoothstep(Math.max(outA, outE));
   } else { az = shot.az + DIR.offAz + drift; el = clamp(shot.el + DIR.offEl, -1.5, 1.5); }
-  DIR.prm = { mode: shot.mode, look: shot.look, from: shot.from, off: shot.off, az, el, dist: DIR.dist, aim, centreK, fromAz: shot.mode === 'from' ? DIR.offAz : 0, fromEl: shot.mode === 'from' ? DIR.offEl : 0, zoomK: DIR.zoomK };
+  DIR.prm = { mode: shot.mode, look: shot.look, from: shot.from, off: shot.off, spot: shot.spot, az, el, dist: DIR.dist, aim, centreK, fromAz: shot.mode === 'from' ? DIR.offAz : 0, fromEl: shot.mode === 'from' ? DIR.offEl : 0, zoomK: DIR.zoomK };
   DIR.shot = shot;
   const lens = DIR.lensUser || shot.lens;
-  if (Math.abs(CAM.lens - lens) > 0.5) { CAM.lens = jump ? lens : Math.exp(Math.log(CAM.lens) + (Math.log(lens) - Math.log(CAM.lens)) * Math.min(1, realDt * 2)); applyLens(); syncCamUI(); }
+  if (Math.abs(CAM.lens - lens) > 0.5) { CAM.lens = jump || cut ? lens : Math.exp(Math.log(CAM.lens) + (Math.log(lens) - Math.log(CAM.lens)) * Math.min(1, realDt * 2)); applyLens(); syncCamUI(); }
   if (CAM.look !== shot.look && shot.look) CAM.look = shot.look;
 }
 function updateCamera(t, realDt) {
   const cam = R.camera;
   { const d0 = VSHIFT; applyViewShift(); if (VSHIFT !== d0) cam.updateProjectionMatrix(); }
-  if (CAM.mode === 'auto' && MV.md) directorUpdate(t, realDt);
+  if (directed() && MV.md) directorUpdate(t, realDt);
   let P = targetPos(CAM.target, t);
   if (!P) P = targetPos('obj:ship', t) || helio('earth', t).r; // target not in flight yet (e.g. a lander still docked): follow the ship meanwhile
   // transition between targets
@@ -343,7 +359,7 @@ function updateCamera(t, realDt) {
   }
   CAM.groundInfo = null;
   R.O = P;
-  if (CAM.mode === 'auto' && MV.md && DIR.prm) {
+  if (directed() && MV.md && DIR.prm) {
     const pose = poseFor(DIR.prm.mode, DIR.prm, P, t); setPose(pose);
     if (DIR.blend) {
       const f = smoothstep((clockMs() - DIR.blend.t0) / DIR.blend.dur);
@@ -356,10 +372,12 @@ function updateCamera(t, realDt) {
         else cam.quaternion.slerpQuaternions(DIR.blend.quat, qT, f);
       }
     }
-    CAM.camDist = DIR.prm.mode === 'site' ? cam.position.length() : DIR.prm.dist; return;
+    const sh = DIR.shot && DIR.shot.shake; // the camera shaking with the thrust (a cinematic shot): two rough sines on each axis, in real time
+    if (sh > 0) { const k = R.clock; cam.rotateX(sh * (Math.sin(k * 37.1) + 0.6 * Math.sin(k * 91.3 + 1.3)) * 0.6); cam.rotateY(sh * (Math.sin(k * 43.7 + 2.1) + 0.5 * Math.sin(k * 77.9 + 0.4)) * 0.6); }
+    CAM.camDist = DIR.prm.mode === 'site' || DIR.prm.mode === 'padcam' ? cam.position.length() : DIR.prm.dist; return;
   }
   const minD = rT > 0 ? rT * 1.003 + 0.002 : 0.004; dist = Math.max(dist, minD); if (!CAM.trans) CAM.dist = Math.max(CAM.dist, minD);
-  const mode = CAM.mode === 'auto' ? 'chase' : CAM.mode;
+  const mode = directed() ? 'chase' : CAM.mode;
   setPose(poseFor(mode, { az: CAM.az, el: CAM.el, dist, look: CAM.look }, P, t));
   CAM.camDist = dist;
 }
@@ -371,10 +389,11 @@ function initCameraInput() {
   el.addEventListener('pointermove', e => {
     const p = ptrs.get(e.pointerId); if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-    if (ptrs.size === 2 && pinch0) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); const k = pinch0.d / Math.max(d, 1); if (CAM.mode === 'ground') CAM.lens = clamp(pinch0.lens / k, 8, 3200); else if (CAM.mode === 'auto') DIR.zoomK = clamp(pinch0.zk * k, 0.05, 2e4); else CAM.dist = clamp(pinch0.dist * k, 0.004, 5e10); CAM.trans = null; applyLens(); syncCamUI(); return; }
+    if (ptrs.size === 2 && pinch0) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); const k = pinch0.d / Math.max(d, 1); if (CAM.mode === 'ground') CAM.lens = clamp(pinch0.lens / k, 8, 3200); else if (directed()) { if (CAM.mode === 'cine') setMode('auto'); DIR.zoomK = clamp(pinch0.zk * k, 0.05, 2e4); } else CAM.dist = clamp(pinch0.dist * k, 0.004, 5e10); CAM.trans = null; applyLens(); syncCamUI(); return; }
     const fovK = Math.min(1, CAM.lens > 0 ? 50 / CAM.lens : 1);
     if (p.b === 2 || p.shift) { CAM.roll += dx * 0.004; return; }
     if (CAM.mode === 'ground') { CAM.ground.track = false; CAM.ground.yaw -= dx * 0.0035 * fovK; CAM.ground.pitch = clamp(CAM.ground.pitch + dy * 0.0035 * fovK, -1.55, 1.55); return; }
+    if (CAM.mode === 'cine') setMode('auto'); // (taking the camera ends the film; the director carries on from here)
     if (CAM.mode === 'auto') { DIR.offAz -= dx * 0.006; DIR.offEl = clamp(DIR.offEl + dy * 0.006, -1.5, 1.5); DIR.blend = null; return; }
     CAM.az -= dx * 0.006; CAM.el = clamp(CAM.el + dy * 0.006, -1.55, 1.55);
   });
@@ -383,6 +402,7 @@ function initCameraInput() {
   el.addEventListener('wheel', e => {
     e.preventDefault(); const dy = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
     if (CAM.mode === 'ground') { CAM.lens = clamp(CAM.lens * Math.exp(-dy * 0.0012), 8, 3200); applyLens(); syncCamUI(); return; }
+    if (CAM.mode === 'cine') setMode('auto');
     if (CAM.mode === 'auto') { DIR.zoomK = clamp(DIR.zoomK * Math.exp(dy * 0.0012), 0.05, 2e4); return; }
     CAM.trans = null; CAM.dist = clamp(CAM.dist * Math.exp(dy * 0.0012), 0.004, 5e10);
   }, { passive: false });
