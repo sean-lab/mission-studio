@@ -372,8 +372,8 @@ function updateCamera(t, realDt) {
         else cam.quaternion.slerpQuaternions(DIR.blend.quat, qT, f);
       }
     }
-    const sh = DIR.shot && DIR.shot.shake; // the camera shaking with the thrust (a cinematic shot): two rough sines on each axis, in real time
-    if (sh > 0) { const k = R.clock; cam.rotateX(sh * (Math.sin(k * 37.1) + 0.6 * Math.sin(k * 91.3 + 1.3)) * 0.6); cam.rotateY(sh * (Math.sin(k * 43.7 + 2.1) + 0.5 * Math.sin(k * 77.9 + 0.4)) * 0.6); }
+    const sk = DIR.shot && DIR.shot.shake, sc = sk && activeCraft(t); // a cinematic shot's camera shaking as a camera would (app/51_cine.js)
+    if (sc) { const [ax, ay] = cineShake(sk, sc, t, cam.position.length()); cam.rotateX(ax); cam.rotateY(ay); }
     CAM.camDist = DIR.prm.mode === 'site' || DIR.prm.mode === 'padcam' ? cam.position.length() : DIR.prm.dist; return;
   }
   const minD = rT > 0 ? rT * 1.003 + 0.002 : 0.004; dist = Math.max(dist, minD); if (!CAM.trans) CAM.dist = Math.max(CAM.dist, minD);
