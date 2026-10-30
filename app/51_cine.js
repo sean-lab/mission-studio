@@ -36,33 +36,51 @@ function cineClear(want) {
   if (blk) for (let k = 0; k < 4; k++) { let moved = false; for (const [b, w] of blk) { const d = wrapPi(a - b * DEG); if (Math.abs(d) < w * DEG - 1e-9) { a = b * DEG + (d < 0 ? -w : w) * DEG; moved = true; } } if (!moved) break; }
   return a;
 }
-// the lens (mm) that makes a height of h km at a distance of d km fill a fraction f of the frame's height
-function cineFitLens(h, d, f) { const fr = frameRect(), tanV = h / Math.max(d, 1e-6) / (2 * f); return clamp(18 * fr.h / (fr.w * tanV), 14, 1200); }
+// What a shot frames: the vehicle as it is drawn now (its model's bounds, along its axis), not the launcher's nominal
+// height from its base point — a Shuttle stack is as wide as it is tall, and a stage's base point is its engines.
+// aim: its middle, relative to the craft's position (km, the scene's axes); len: its size (km)
+const _cv = new THREE.Vector3(), _cp = new THREE.Vector3();
+function cineSubject(c, Lnom) {
+  const m = c.cur, ud = m && m.userData;
+  if (!m || !ud.bbY || !c.node) return { aim: null, len: Lnom };
+  const yc = (c.yOff || 0) + (ud.bbY[0] + ud.bbY[1]) / 2; // (the model's own origin sits c.yOff up the node)
+  c.node.localToWorld(_cv.set(0, yc, 0)); c.node.getWorldPosition(_cp);
+  const lenM = Math.max(ud.bbY[1] - ud.bbY[0], ud.bbox ? Math.max(ud.bbox.w, ud.bbox.d) : 0);
+  return { aim: [_cv.x - _cp.x, _cv.y - _cp.y, _cv.z - _cp.z], len: Math.max(lenM * 0.001, 0.005) };
+}
+// pixels per radian for a lens (mm), and the free rows' height (the screen the HUD leaves: the director's band, which the
+// view is already centred in)
+function cinePxPerRad(lens) { return lens * frameRect().w / 36; }
+function cineBandH() { const B = screenBand(); return Math.max(B.bot - B.top, 80); }
+// the lens (mm) that makes a size of h km at a distance of d km fill a fraction f of the free rows
+function cineFitLens(h, d, f) { return clamp(36 * f * cineBandH() / (frameRect().w * h / Math.max(d, 1e-6)), 14, 1200); }
+// the distance (km) at which a size of h km fills a fraction f of the free rows through a lens (mm)
+function cineFitDist(h, lens, f) { return h * cinePxPerRad(lens) / (f * cineBandH()); }
 // The shot at time t for craft c (the ship), or null outside the launch (the director's own shot then). L: the launch
 // stack's height (km); sunAz: the bearing toward the Sun, so the ground cameras see the lit side
 function cineShot(c, t) {
   const md = MV.md; if (!md || c.o.id !== 'ship' || !md.L || !LAUNCH_SITES[md.cfg.site] || !c.s) { CINE.timeK = 1; return null; }
   const L = Math.max(md.L.height || 50, 10) * 0.001, sunAz = (() => { const p = poseFor('chase', { az: 0, el: 0, dist: 1 }, c.P, t); const [e1, e2] = p.basis; const sd = vunit(vscale(c.P, -1)); return Math.atan2(vdot(sd, e2), vdot(sd, e1)); })();
   const T = cineTimes(md); if (t < T.tIgn - 8 || t >= T.tEnd) { CINE.timeK = 1; return null; }
-  const s = c.s, T0 = T.t0, up = s ? vunit(c.rD || s.r) : null;
+  const s = c.s, T0 = T.t0, up = s ? vunit(c.rD || s.r) : null, V = cineSubject(c, L), Lv = V.len; // (Lv: the vehicle as drawn now)
   const slow = (a, b, k) => { const ramp = 0.6, f = Math.min(smoothstep((t - a) / ramp), smoothstep((b - t) / ramp)); return 1 + (k - 1) * f; }; // (eased in and out over 0.6 s of mission time)
   let shot;
   if (t < T0) { // 1. base: low near the pad, pushing in as the engines light
     const az = cineClear(cineSide(sunAz) + 22 * DEG), d = Math.max(L * 1.5, 0.12), f = smoothstep((t - (T.tIgn - 8)) / (T0 - T.tIgn + 8));
-    shot = { key: 'cine-base', mode: 'padcam', spot: [d * Math.cos(az), d * Math.sin(az), 0.0015], aimH: L * 0.6, lens: 16 + 8 * f, shake: 'ground', cut: true, label: 'Ignition' };
+    shot = { key: 'cine-base', mode: 'padcam', spot: [d * Math.cos(az), d * Math.sin(az), 0.0015], aimP: V.aim, lens: cineFitLens(Lv, d, 0.82 + 0.1 * f), shake: 'ground', cut: true, label: 'Ignition' }; // (filling the frame, pushing in a little)
   } else if (t < T0 + 7) { // 2. rise: slow motion, the vehicle climbing past a camera by the trench
     // (out past the cloud the blast throws round the pad, which would hide the vehicle from nearer)
     const az = cineClear(cineSide(sunAz) - 15 * DEG), d = Math.max(L * 8, 0.5), h = s && up ? Math.max(vnorm(c.rD || s.r) - surfaceRadius('earth'), 0) : 0;
-    shot = { key: 'cine-rise', mode: 'padcam', spot: [d * Math.cos(az), d * Math.sin(az), 0.0012], aimH: L * 0.75, lens: cineFitLens(L, Math.hypot(d, h + L * 0.6), 0.62), shake: 'ground', slow: slow(T0 - 0.3, T0 + 5, 0.3), cut: true, label: 'Liftoff' };
+    shot = { key: 'cine-rise', mode: 'padcam', spot: [d * Math.cos(az), d * Math.sin(az), 0.0012], aimP: V.aim, lens: cineFitLens(Lv, Math.hypot(d, h + Lv * 0.5), 0.7), shake: 'ground', slow: slow(T0 - 0.3, T0 + 5, 0.3), cut: true, label: 'Liftoff' };
   } else if (t < T.tTail) { // 3. track: a long lens on the ground, following it into the sky
     const az = cineClear(cineSide(sunAz) + 35 * DEG), d = 2.6, h = s ? Math.max(vnorm(c.rD || s.r) - surfaceRadius('earth'), 0) : 0;
-    shot = { key: 'cine-track', mode: 'padcam', spot: [d * Math.cos(az), d * Math.sin(az), 0.002], aimH: L * 0.5, lens: cineFitLens(L, Math.hypot(d, h), 0.42), shake: 'ground', cut: true, label: 'Climbing away' };
+    shot = { key: 'cine-track', mode: 'padcam', spot: [d * Math.cos(az), d * Math.sin(az), 0.002], aimP: V.aim, lens: cineFitLens(Lv, Math.hypot(d, h), 0.5), shake: 'ground', cut: true, label: 'Climbing away' };
   } else if (t < T.tSide) { // 4. tail: below the vehicle, looking up along the plume
-    shot = { key: 'cine-tail', mode: 'chase', az: sunAz + 40 * DEG, el: -38 * DEG, dist: L * 1.15, aimV: L * 0.3, lens: 20, shake: 'air', cut: true, label: 'Ascent' };
+    shot = { key: 'cine-tail', mode: 'chase', az: sunAz + 40 * DEG, el: -38 * DEG, dist: cineFitDist(Lv, 20, 0.72), aimP: V.aim, lens: 20, shake: 'air', cut: true, label: 'Ascent' };
   } else if (t < T.tSep) { // … round to its side
-    shot = { key: 'cine-side', mode: 'chase', az: sunAz + 60 * DEG, el: 4 * DEG, dist: L * 2.4, aimV: L * 0.45, lens: 30, shake: 'air', blend: 3500, label: 'Ascent' };
+    shot = { key: 'cine-side', mode: 'chase', az: sunAz + 60 * DEG, el: 4 * DEG, dist: cineFitDist(Lv, 30, 0.6), aimP: V.aim, lens: 30, shake: 'air', blend: 3500, label: 'Ascent' };
   } else { // 5. staging: a close cut, in slow motion
-    shot = { key: 'cine-sep', mode: 'chase', az: sunAz + 95 * DEG, el: 8 * DEG, dist: L * 1.7, aimV: L * 0.3, lens: 30, shake: 'air', slow: slow(T.tS - 0.8, T.tS + 3.5, 0.3), cut: true, label: 'Staging' };
+    shot = { key: 'cine-sep', mode: 'chase', az: sunAz + 95 * DEG, el: 8 * DEG, dist: cineFitDist(L * 1.1, 30, 0.75), aimP: V.aim, lens: 30, shake: 'air', slow: slow(T.tS - 0.8, T.tS + 3.5, 0.3), cut: true, label: 'Staging' };
   }
   CINE.timeK = shot.slow || 1;
   return shot;

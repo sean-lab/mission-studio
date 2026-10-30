@@ -310,7 +310,8 @@ function directorUpdate(t, realDt) {
   DIR.dist = DIR.dist == null || jump ? target : Math.exp(Math.log(DIR.dist) + (Math.log(target) - Math.log(DIR.dist)) * Math.min(1, realDt * 1.5));
   if (shot.aimH == null) DIR.aimH = null; // look above the base point (a standing rocket is framed around its middle)
   else DIR.aimH = DIR.aimH == null || jump ? shot.aimH : DIR.aimH + (shot.aimH - DIR.aimH) * Math.min(1, realDt * 1.5);
-  const aim = shot.aimV && c.vD && vnorm(c.vD) > 1e-6 ? vscale(vunit(c.vD), shot.aimV) // (up the vehicle's axis, near enough its velocity in flight: a cinematic shot of a long stack)
+  const aim = shot.aimP ? shot.aimP // (a point given outright: the middle of a vehicle as drawn, app/51_cine.js)
+    : shot.aimV && c.vD && vnorm(c.vD) > 1e-6 ? vscale(vunit(c.vD), shot.aimV) // (up the vehicle's axis, near enough its velocity in flight: a cinematic shot of a long stack)
     : DIR.aimH != null && c.s ? vscale(vunit(c.rD || c.s.r), DIR.aimH) : null;
   let az, el, centreK = 0;
   if (shot.mode === 'lookat') { // keep the craft inside the middle of the film frame, whatever the lens and screen shape
